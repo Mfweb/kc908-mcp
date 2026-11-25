@@ -1,0 +1,20 @@
+# Built binaries and runtime DLLs
+*.exe
+*.dll
+*.syso
+version.rc
+/bin/
+/build/
+/dist/
+
+# Go test and coverage artifacts
+*.test
+*.out
+coverage.html
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
