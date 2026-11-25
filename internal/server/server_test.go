@@ -214,7 +214,7 @@ func TestInstrumentMCPTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Tools) != 26 {
+	if len(list.Tools) != 33 {
 		t.Fatalf("tools: %d", len(list.Tools))
 	}
 
@@ -226,8 +226,11 @@ func TestInstrumentMCPTools(t *testing.T) {
 	}{
 		{"instrument_mode", ModeArgs{Mode: "receiver"}, "mode 0", false},
 		{"instrument_mode", ModeArgs{Mode: "correlator"}, "mode 3", false},
+		{"instrument_mode", ModeArgs{Mode: "vsa"}, "mode 6", false},
 		{"instrument_status", TelemetryArgs{Topic: "adsb"}, "adsb", false},
 		{"instrument_status", TelemetryArgs{Topic: "dtmb"}, "dtmb", false},
+		{"instrument_status", TelemetryArgs{Topic: "vsa"}, "vsa", false},
+		{"instrument_status", TelemetryArgs{Topic: "gps"}, "gps", false},
 		{"receiver_configure", ConfigureArgs{Parameters: []device.Parameter{{Name: "RX_FREQ", Value: 144640000}}}, "set RX_FREQ 144640000", false},
 		{"instrument_text", TextArgs{Field: "channel_rename:4", Text: "济南广播"}, "text channel_rename:4 e6b58ee58d97e5b9bfe692ad", false},
 		{"instrument_text", TextArgs{Field: "channel_add", Text: "FM"}, "text channel_add 464d", false},
@@ -361,5 +364,96 @@ func TestAppMCPTools(t *testing.T) {
 	r, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "app_launch", Arguments: AppNameArgs{Filename: "../escape.kcapp"}})
 	if err != nil || !r.IsError {
 		t.Fatalf("traversal launch should fail: %v %+v", err, r)
+	}
+}
+
+func TestVSAAndGPSMCPTools(t *testing.T) {
+	ctx := context.Background()
+	dev := new(fakeDevice)
+	cs, cleanup := connectTestClient(t, ctx, dev)
+	defer cleanup()
+
+	freq := 433920000.0
+	symRate := 100000.0
+	alpha := 0.35
+	syms := 512
+	preset := 1
+	port := 2
+	tz := 32
+
+	r, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "vsa_configure",
+		Arguments: VSAConfigureArgs{
+			Enter:        true,
+			Preset:       &preset,
+			Port:         &port,
+			FrequencyHz:  &freq,
+			Modulation:   "16qam",
+			SymbolRateHz: &symRate,
+			Filter:       "rrc",
+			Alpha:        &alpha,
+			Equalizer:    "adaptive",
+			Symbols:      &syms,
+		},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("vsa_configure failed: %v %+v", err, r)
+	}
+
+	// Reject invalid VSA configuration inputs.
+	badSyms := 300
+	r, err = cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "vsa_configure",
+		Arguments: VSAConfigureArgs{Symbols: &badSyms},
+	})
+	if err != nil || !r.IsError {
+		t.Fatalf("expected error on bad VSA symbols: %v %+v", err, r)
+	}
+
+	vsaCases := []struct {
+		name    string
+		args    any
+		command string
+		fail    bool
+	}{
+		{"vsa_control", VSAControlArgs{Operation: "single"}, "action vsa_single", false},
+		{"vsa_control", VSAControlArgs{Operation: "run"}, "action run", false},
+		{"vsa_control", VSAControlArgs{Operation: "clear_persist"}, "action vsa_clear_persist", false},
+		{"vsa_control", VSAControlArgs{Operation: "view", View: "evm"}, "action vsa_view 2", false},
+		{"vsa_control", VSAControlArgs{Operation: "view", View: "badview"}, "", true},
+		{"vsa_status", Empty{}, "vsa", false},
+		{"vsa_read", VSAReadArgs{Section: "constellation"}, "vsa_frame constellation", false},
+		{"vsa_read", VSAReadArgs{}, "vsa_frame all", false},
+		{"vsa_read", VSAReadArgs{Section: "unknown"}, "", true},
+		{"vsa_control", VSAControlArgs{Operation: "stop"}, "action stop", false},
+		{"gps_control", GPSControlArgs{Operation: "start", OpenPage: true}, "action gps_start 1", false},
+		{"gps_status", Empty{}, "gps", false},
+		{"gps_track", GPSTrackArgs{Offset: 0, Limit: 32}, "gps_track 0 32", false},
+		{"gps_track", GPSTrackArgs{Offset: 0, Limit: 250}, "", true},
+		{"gps_control", GPSControlArgs{Operation: "sync_location"}, "action gps_sync_location", false},
+		{"gps_control", GPSControlArgs{Operation: "sync_clock"}, "action gps_sync_clock", false},
+		{"gps_control", GPSControlArgs{Operation: "sync_clock", TimezoneQuarters: &tz}, "action gps_sync_clock 32", false},
+		{"gps_control", GPSControlArgs{Operation: "track_save"}, "action gps_track_save", false},
+		{"gps_control", GPSControlArgs{Operation: "track_reset"}, "action gps_track_reset", false},
+		{"gps_control", GPSControlArgs{Operation: "stop"}, "action gps_stop", false},
+		{"gps_control", GPSControlArgs{Operation: "unknown"}, "", true},
+	}
+
+	for _, tc := range vsaCases {
+		res, callErr := cs.CallTool(ctx, &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
+		if callErr != nil {
+			t.Fatal(callErr)
+		}
+		if res.IsError != tc.fail {
+			t.Fatalf("%s (%+v) error=%v content=%v", tc.name, tc.args, res.IsError, res.Content)
+		}
+		if tc.command != "" {
+			dev.mu.Lock()
+			last := dev.commands[len(dev.commands)-1]
+			dev.mu.Unlock()
+			if last != tc.command {
+				t.Fatalf("%s: got %q, want %q", tc.name, last, tc.command)
+			}
+		}
 	}
 }

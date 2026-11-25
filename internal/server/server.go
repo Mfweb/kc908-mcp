@@ -35,7 +35,7 @@ type ConfigureArgs struct {
 }
 
 type ModeArgs struct {
-	Mode string `json:"mode" jsonschema:"receiver, spectrum, source, correlator, compass, or system"`
+	Mode string `json:"mode" jsonschema:"receiver, spectrum, source, correlator, compass, system, or vsa"`
 }
 
 type ActionArgs struct {
@@ -44,7 +44,7 @@ type ActionArgs struct {
 }
 
 type TelemetryArgs struct {
-	Topic string `json:"topic" jsonschema:"Name from instrument_capabilities telemetry, or adsb or dtmb on KTOS 1.3.0 and later"`
+	Topic string `json:"topic" jsonschema:"Name from instrument_capabilities telemetry (including adsb, dtmb, vsa, gps, apps)"`
 }
 
 type InputArgs struct {
@@ -71,6 +71,7 @@ var instrumentModes = map[string]int{
 	"correlator": 3,
 	"compass":    4,
 	"system":     5,
+	"vsa":        6,
 }
 
 var allowedTelemetryTopics = map[string]struct{}{
@@ -80,7 +81,7 @@ var allowedTelemetryTopics = map[string]struct{}{
 	"attitude": {}, "remote": {}, "rxperf": {}, "files": {}, "rxpeaklist": {},
 	"rxautoset": {}, "rxlevel": {}, "rxdetectors": {}, "rxmasks": {}, "rxdpx": {},
 	"rxwaterfall": {}, "licenses": {}, "environment": {}, "settings": {},
-	"adsb": {}, "dtmb": {}, "apps": {},
+	"adsb": {}, "dtmb": {}, "vsa": {}, "gps": {}, "apps": {},
 }
 
 func toolResult(raw json.RawMessage, err error) (*mcp.CallToolResult, any, error) {
@@ -116,6 +117,8 @@ func NewWithCleanup(dev device.Device, version string) (*mcp.Server, func()) {
 
 	addImageTools(s, transfers)
 	addAppTools(s, dev, transfers)
+	addVSATools(s, dev)
+	addGPSTools(s, dev)
 	addInstrumentTools(s, dev)
 
 	return s, transfers.Shutdown
@@ -148,7 +151,7 @@ func addInstrumentTools(s *mcp.Server, dev device.Device) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "instrument_mode",
-		Description: "Select receiver, spectrum analyzer, signal source, correlator, compass, or system. The correlator requires a supported dual-receiver model with KTOS 1.3.0 or later. Stop output before switching.",
+		Description: "Select receiver, spectrum analyzer, signal source, correlator, compass, system, or VSA (vector signal analyzer). The correlator requires a supported dual-receiver model. Stop output before switching.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a ModeArgs) (*mcp.CallToolResult, any, error) {
 		modeID, ok := instrumentModes[a.Mode]
 		if !ok {
@@ -221,7 +224,7 @@ func addInstrumentTools(s *mcp.Server, dev device.Device) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "instrument_status",
-		Description: "Read live receiver, source, audio, decoder, recording, marker, and settings state. KTOS 1.3.0 also supports ADS-B and DTMB status.",
+		Description: "Read live receiver, source, audio, decoder, recording, marker, settings, ADS-B, DTMB, VSA, GPS, and KCApp state.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a TelemetryArgs) (*mcp.CallToolResult, any, error) {
 		if _, ok := allowedTelemetryTopics[a.Topic]; !ok {
 			return toolResult(nil, fmt.Errorf("unknown telemetry topic"))
