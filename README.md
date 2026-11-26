@@ -6,8 +6,9 @@ Go stdio [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server
 
 ## Prerequisites
 
-- **Windows x64**: FTDI D3XX driver installed; 64-bit `kcsdr.dll` (from the KTOS Host SDK) and official 64-bit `FTD3XX.dll` (>= 1.3.0.4) placed alongside `ktos-mcp.exe` (or passed via `--sdk`)
-- **Linux (`x86_64`, `aarch64`, etc.)**: `libusb-1.0` (`libusb-1.0-0`) installed and udev permissions configured for FT601 (`0403:601f`); `libkcsdr.so` placed alongside `ktos-mcp` (or passed via `--sdk`)
+- **KTOS Host SDK ([kc908-sdk](https://github.com/Mfweb/kc908-sdk))**: `ktos-mcp` does not bundle the native USB 3.0 shared library. At runtime it dynamically loads `kcsdr.dll` (Windows) or `libkcsdr.so` (Linux) from **[https://github.com/Mfweb/kc908-sdk](https://github.com/Mfweb/kc908-sdk)** — download a matching-architecture build from its Releases/CI artifacts (or build it from source) and place it next to `ktos-mcp` (or pass its path via `--sdk`).
+- **Windows x64**: FTDI D3XX driver installed; 64-bit `kcsdr.dll` (from [kc908-sdk](https://github.com/Mfweb/kc908-sdk)) and official 64-bit `FTD3XX.dll` (>= 1.3.0.4, obtained from FTDI; not bundled) placed alongside `ktos-mcp.exe` (or passed via `--sdk`)
+- **Linux (`x86_64`, `aarch64`, `armv7l`/`armhf`, `i686`)**: `libusb-1.0` (`libusb-1.0-0`) installed and the `99-kc908-ft601.rules` udev rule (from [kc908-sdk](https://github.com/Mfweb/kc908-sdk)) configured for FT601 (`0403:601f`); matching-architecture `libkcsdr.so` (from [kc908-sdk](https://github.com/Mfweb/kc908-sdk)) placed alongside `ktos-mcp` (or passed via `--sdk`)
 - KC908 switched to **Custom System → Remote → MCP Mode**
 
 ## Building and Testing

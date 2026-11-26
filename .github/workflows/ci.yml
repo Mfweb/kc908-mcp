@@ -1,0 +1,299 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build-windows:
+    name: Build (windows-x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup MSYS2 (for windres VERSIONINFO resource)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Run vet and unit tests
+        shell: pwsh
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go vet ./...
+          go test -v ./...
+
+      - name: Generate Windows version resource
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r' < cmd/ktos-mcp/version.go | grep -Eo '^const version = "[0-9]+\.[0-9]+\.[0-9]+"' | sed -E 's/.*"([^"]+)"/\1/' | head -n1)"
+          [[ -n "$version" ]] || { echo "Failed to parse MCP version" >&2; exit 1; }
+          version_num="${version//./,},0"
+
+          mkdir -p build
+          sed \
+            -e "s|@HOST_VERSION_NUMERIC@|${version_num}|g" \
+            -e "s|@HOST_FILE_TYPE@|VFT_APP|g" \
+            -e "s|@HOST_DESCRIPTION@|KC908 Model Context Protocol server|g" \
+            -e "s|@HOST_VERSION@|${version}|g" \
+            -e "s|@HOST_INTERNAL_NAME@|ktos-mcp|g" \
+            -e "s|@HOST_FILENAME@|ktos-mcp.exe|g" \
+            -e "s|@HOST_PRODUCT_NAME@|KTOS MCP|g" \
+            resources/version.rc.in > build/version.rc
+
+          windres --target=pe-x86-64 -O coff \
+            -i build/version.rc \
+            -o cmd/ktos-mcp/version_windows_amd64.syso
+
+      - name: Build, verify, and package archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $verFile = Get-Content -LiteralPath 'cmd/ktos-mcp/version.go' -Raw
+          $m = [regex]::Match($verFile, '(?m)^const version = "(\d+\.\d+\.\d+)"')
+          if (-not $m.Success) { throw 'Failed to parse MCP version from cmd/ktos-mcp/version.go' }
+          $version = $m.Groups[1].Value
+
+          $pkgName = "ktos-mcp-$version-windows-x64"
+          $stage = Join-Path 'dist' $pkgName
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          $env:CGO_ENABLED = '0'
+          $exePath = Join-Path $stage 'ktos-mcp.exe'
+          go build -trimpath -buildvcs=false -o $exePath ./cmd/ktos-mcp
+          if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" }
+
+          $info = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $exePath).Path)
+          if ($info.ProductVersion -ne $version -or
+              $info.FileVersion -ne "$version.0" -or
+              $info.CompanyName -ne 'Mfweb' -or
+              $info.LegalCopyright -ne 'Copyright (c) Mfweb' -or
+              $info.OriginalFilename -ne 'ktos-mcp.exe') {
+              throw "Unexpected VERSIONINFO on ktos-mcp.exe: Product=$($info.ProductVersion) File=$($info.FileVersion) Company=$($info.CompanyName)"
+          }
+
+          # Do not bundle vendor FTD3XX.dll or kcsdr.dll; kcsdr.dll is provided by kc908-sdk.
+          Copy-Item -LiteralPath 'LICENSE' -Destination (Join-Path $stage 'LICENSE')
+          Copy-Item -LiteralPath 'README.md' -Destination (Join-Path $stage 'README.md')
+          Copy-Item -LiteralPath 'README.zh-CN.md' -Destination (Join-Path $stage 'README.zh-CN.md')
+
+          $forbidden = Get-ChildItem -LiteralPath $stage -Recurse -File |
+              Where-Object { $_.Name -match 'FTD3XX|kcsdr|libusb' }
+          if ($forbidden) {
+              throw "Forbidden runtime/vendor binary found in package: $($forbidden.FullName -join ', ')"
+          }
+
+          $prefix = (Get-Item -LiteralPath $stage).FullName.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+          $sums = Get-ChildItem -LiteralPath $stage -Recurse -File |
+              Sort-Object { $_.FullName.Substring($prefix.Length).Replace('\', '/') } |
+              ForEach-Object {
+                  $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                  $rel = $_.FullName.Substring($prefix.Length).Replace('\', '/')
+                  "$hash  $rel"
+              }
+          [IO.File]::WriteAllText(
+              (Join-Path $stage 'SHA256SUMS.txt'),
+              ($sums -join "`n") + "`n",
+              [Text.UTF8Encoding]::new($false)
+          )
+
+          New-Item -ItemType Directory -Path 'artifacts' -Force | Out-Null
+          $archive = Join-Path 'artifacts' "$pkgName.zip"
+          Compress-Archive -Path $stage -DestinationPath $archive -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ktos-mcp-windows-x64
+          path: artifacts/*.zip
+          if-no-files-found: error
+
+  build-linux:
+    name: Build (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: linux-x64
+            goarch: amd64
+            goarm: ""
+            cc: gcc
+            cross_pkg: ""
+            native_test: true
+            elf_machine: "Advanced Micro Devices X86-64"
+          - arch: linux-arm64
+            goarch: arm64
+            goarm: ""
+            cc: aarch64-linux-gnu-gcc
+            cross_pkg: "gcc-aarch64-linux-gnu"
+            native_test: false
+            elf_machine: "AArch64"
+          - arch: linux-armhf
+            goarch: arm
+            goarm: "7"
+            cc: arm-linux-gnueabihf-gcc
+            cross_pkg: "gcc-arm-linux-gnueabihf"
+            native_test: false
+            elf_machine: "ARM"
+          - arch: linux-x86
+            goarch: 386
+            goarm: ""
+            cc: i686-linux-gnu-gcc
+            cross_pkg: "gcc-i686-linux-gnu"
+            native_test: false
+            elf_machine: "Intel 80386"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install cross-compiler
+        if: matrix.cross_pkg != ''
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ${{ matrix.cross_pkg }}
+
+      - name: Vet, test, build, and package archive
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: "1"
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          go vet ./...
+
+          if [[ "${{ matrix.native_test }}" == "true" ]]; then
+            go test -v ./...
+          else
+            # Verify all packages and tests (including native_linux.go cgo bridge) compile for target arch.
+            go test -run='^$' -exec=true ./...
+          fi
+
+          version="$(grep -Eo '^const version = "[0-9]+\.[0-9]+\.[0-9]+"' cmd/ktos-mcp/version.go | sed -E 's/.*"([^"]+)"/\1/' | head -n1)"
+          [[ -n "$version" ]] || { echo "Failed to parse MCP version" >&2; exit 1; }
+
+          pkg_name="ktos-mcp-${version}-${{ matrix.arch }}"
+          stage="dist/${pkg_name}"
+          mkdir -p "${stage}" artifacts
+
+          go build -trimpath -buildvcs=false -o "${stage}/ktos-mcp" ./cmd/ktos-mcp
+
+          # Verify target ELF architecture and confirm cgo dlopen bridge is linked in.
+          readelf -h "${stage}/ktos-mcp" | grep -F "${{ matrix.elf_machine }}"
+          readelf --dyn-syms -W "${stage}/ktos-mcp" | grep -Eq '\bdlopen(@| |$)'
+
+          # Do not bundle libkcsdr.so or fake emulators; libkcsdr.so is provided by kc908-sdk.
+          cp -f LICENSE README.md README.zh-CN.md "${stage}/"
+
+          if find "${stage}" -type f \( -iname '*FTD3XX*' -o -iname '*kcsdr*' -o -iname '*libusb*' \) | grep -q .; then
+            echo "Forbidden runtime/vendor binary found in package" >&2
+            exit 1
+          fi
+
+          (
+            cd "${stage}"
+            find . -type f ! -name 'SHA256SUMS.txt' | sed 's|^\./||' | LC_ALL=C sort | xargs sha256sum > SHA256SUMS.txt
+          )
+
+          tar -C dist -czf "artifacts/${pkg_name}.tar.gz" "${pkg_name}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ktos-mcp-${{ matrix.arch }}
+          path: artifacts/*.tar.gz
+          if-no-files-found: error
+
+  package:
+    name: Bundle all platforms
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ktos-mcp-*
+          merge-multiple: true
+          path: release
+
+      - name: Verify archives and generate checksums
+        run: |
+          set -euo pipefail
+          cd release
+          shopt -s nullglob
+          archives=(*.zip *.tar.gz)
+          [[ "${#archives[@]}" -gt 0 ]] || { echo "No packaged archives found" >&2; exit 1; }
+
+          for archive in "${archives[@]}"; do
+            if [[ "$archive" == *.zip ]]; then
+              listing="$(unzip -Z1 "$archive")"
+            else
+              listing="$(tar -tzf "$archive")"
+            fi
+            if echo "$listing" | grep -Eiq 'FTD3XX|kcsdr|libusb'; then
+              echo "Forbidden runtime/vendor binary found in $archive" >&2
+              exit 1
+            fi
+          done
+
+          printf '%s\n' "${archives[@]}" | LC_ALL=C sort | xargs sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload combined bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: bundle-ktos-mcp
+          path: release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download combined bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: bundle-ktos-mcp
+          path: release
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: release/*

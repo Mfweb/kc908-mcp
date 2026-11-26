@@ -4,10 +4,11 @@
 
 [English](README.md)
 
-## 运行环境
+## 运行环境与依赖
 
-- **Windows x64**：已安装 FTDI D3XX 驱动；64 位 `kcsdr.dll`（来自 KTOS 主机 SDK）与 64 位官方 `FTD3XX.dll`（1.3.0.4 或更新版本）放在 `ktos-mcp.exe` 同目录（或通过 `--sdk` 指定）
-- **Linux（`x86_64`、`aarch64` 等）**：系统已安装 `libusb-1.0`（`libusb-1.0-0`）并配置 FT601（`0403:601f`）udev 权限规则；`libkcsdr.so` 放在 `ktos-mcp` 同目录（或通过 `--sdk` 指定）
+- **依赖项目 [kc908-sdk](https://github.com/Mfweb/kc908-sdk)**：`ktos-mcp` 本身不包含底层 USB 3.0 动态库，运行时需动态加载由 **[https://github.com/Mfweb/kc908-sdk](https://github.com/Mfweb/kc908-sdk)** 提供的 `kcsdr.dll`（Windows）或 `libkcsdr.so`（Linux）。请先从 [kc908-sdk](https://github.com/Mfweb/kc908-sdk) 获取（或自行编译）与当前操作系统及 CPU 架构匹配的动态库，并放在 `ktos-mcp` 同目录（或通过 `--sdk` 指定路径）。
+- **Windows x64**：已安装 FTDI D3XX 驱动；将来自 [kc908-sdk](https://github.com/Mfweb/kc908-sdk) 的 64 位 `kcsdr.dll` 以及从 FTDI 官方获取的 64 位 `FTD3XX.dll`（1.3.0.4 或更新版本，本仓库与构建产物均不包含该厂商文件）放在 `ktos-mcp.exe` 同目录（或通过 `--sdk` 指定）
+- **Linux（`x86_64`、`aarch64`、`armv7l`/`armhf`、`i686`）**：系统已安装 `libusb-1.0`（`libusb-1.0-0`）并配置来自 [kc908-sdk](https://github.com/Mfweb/kc908-sdk) 的 FT601（`0403:601f`）udev 规则（`99-kc908-ft601.rules`）；将对应架构的 `libkcsdr.so`（来自 [kc908-sdk](https://github.com/Mfweb/kc908-sdk)）放在 `ktos-mcp` 同目录（或通过 `--sdk` 指定）
 - 设备端开启 **自制系统 → 远程 → MCP 模式**
 
 ## 编译与测试
