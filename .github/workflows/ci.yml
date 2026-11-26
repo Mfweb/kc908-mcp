@@ -148,21 +148,21 @@ jobs:
             goarch: arm64
             goarm: ""
             cc: aarch64-linux-gnu-gcc
-            cross_pkg: "gcc-aarch64-linux-gnu"
+            cross_pkg: "gcc-aarch64-linux-gnu libc6-dev-arm64-cross"
             native_test: false
             elf_machine: "AArch64"
           - arch: linux-armhf
             goarch: arm
             goarm: "7"
             cc: arm-linux-gnueabihf-gcc
-            cross_pkg: "gcc-arm-linux-gnueabihf"
+            cross_pkg: "gcc-arm-linux-gnueabihf libc6-dev-armhf-cross"
             native_test: false
             elf_machine: "ARM"
           - arch: linux-x86
             goarch: 386
             goarm: ""
             cc: i686-linux-gnu-gcc
-            cross_pkg: "gcc-i686-linux-gnu"
+            cross_pkg: "gcc-i686-linux-gnu libc6-dev-i386-cross"
             native_test: false
             elf_machine: "Intel 80386"
 
@@ -181,7 +181,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ${{ matrix.cross_pkg }}
+          sudo apt-get install -y ${{ matrix.cross_pkg }}
 
       - name: Vet, test, build, and package archive
         env:
