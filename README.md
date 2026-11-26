@@ -6,26 +6,31 @@ Go stdio [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server
 
 ## Prerequisites
 
-- Windows x64 (for live USB 3.0 device transport)
-- FTDI D3XX driver installed
-- 64-bit `kcsdr.dll` (from the KTOS Host SDK) and official 64-bit `FTD3XX.dll` (>= 1.3.0.4) placed alongside `ktos-mcp.exe` (or passed via `--sdk`)
+- **Windows x64**: FTDI D3XX driver installed; 64-bit `kcsdr.dll` (from the KTOS Host SDK) and official 64-bit `FTD3XX.dll` (>= 1.3.0.4) placed alongside `ktos-mcp.exe` (or passed via `--sdk`)
+- **Linux (`x86_64`, `aarch64`, etc.)**: `libusb-1.0` (`libusb-1.0-0`) installed and udev permissions configured for FT601 (`0403:601f`); `libkcsdr.so` placed alongside `ktos-mcp` (or passed via `--sdk`)
 - KC908 switched to **Custom System → Remote → MCP Mode**
 
 ## Building and Testing
 
-Requires Go 1.26+.
+Requires Go 1.26+ (and a C compiler with `CGO_ENABLED=1` on Linux to enable dynamic loading of `libkcsdr.so`).
 
 ```powershell
-# Run unit tests (in-memory MCP transport; no hardware required)
+# Windows: run unit tests and build x64 binary
 go test ./...
-
-# Build Windows x64 binary
 go build -trimpath -o ktos-mcp.exe ./cmd/ktos-mcp
+```
+
+```sh
+# Linux: run unit tests (optionally set KTOS_TEST_SDK=<path/to/tests/libkcsdr.so>) and build binary
+CGO_ENABLED=1 go test ./...
+CGO_ENABLED=1 go build -trimpath -o ktos-mcp ./cmd/ktos-mcp
 ```
 
 ## MCP Client Configuration
 
-Place `ktos-mcp.exe`, `kcsdr.dll`, and `FTD3XX.dll` in the same directory and add the server to your MCP client configuration:
+Place `ktos-mcp` and `libkcsdr.so` (or on Windows `ktos-mcp.exe`, `kcsdr.dll`, and `FTD3XX.dll`) in the same directory and add the server to your MCP client configuration:
+
+Windows:
 
 ```json
 {
@@ -38,7 +43,20 @@ Place `ktos-mcp.exe`, `kcsdr.dll`, and `FTD3XX.dll` in the same directory and ad
 }
 ```
 
-Use `--sdk <path>` if `kcsdr.dll` resides in a different directory, and `--device N` to select a non-default FT601 index. The device handle is opened lazily on the first tool call.
+Linux:
+
+```json
+{
+  "mcpServers": {
+    "kc908": {
+      "command": "/opt/ktos/linux-x64/ktos-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Use `--sdk <path>` if `kcsdr.dll` / `libkcsdr.so` resides in a different directory, and `--device N` to select a non-default FT601 index. The device handle is opened lazily on the first tool call.
 
 ## CLI Utilities
 
@@ -78,12 +96,15 @@ ktos-mcp.exe -app-stop
 ├── cmd/
 │   └── ktos-mcp/
 │       ├── main.go                  # Entry point, CLI flags, and KCApp console tailer
+│       ├── signals_*.go             # Platform shutdown signal list (SIGINT / SIGTERM)
 │       └── version.go               # Server and binary version constant
 ├── internal/
 │   ├── device/
 │   │   ├── device.go                # Device interfaces, thread-safe wrapper, JSON envelope & parameter codec
 │   │   ├── native_windows.go        # Windows amd64 kcsdr.dll syscall bridge
-│   │   ├── native_other.go          # Non-Windows stub for cross-platform compilation/tests
+│   │   ├── native_linux.go          # Linux cgo dlopen/dlsym libkcsdr.so bridge
+│   │   ├── native_linux_test.go     # Linux native SDK load and integration tests
+│   │   ├── native_other.go          # Stub for other platforms or CGO_ENABLED=0 builds
 │   │   └── device_test.go           # Envelope and parameter validation tests
 │   ├── transfer/
 │   │   ├── client.go                # Binary KIMG packet framing and error mapping

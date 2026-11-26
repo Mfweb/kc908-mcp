@@ -6,26 +6,31 @@
 
 ## 运行环境
 
-- Windows x64（用于实机 USB 3.0 通信）
-- 已安装 FTDI D3XX 驱动
-- 64 位 `kcsdr.dll`（来自 KTOS 主机 SDK）与 64 位官方 `FTD3XX.dll`（1.3.0.4 或更新版本），放在 `ktos-mcp.exe` 同目录（或通过 `--sdk` 指定）
+- **Windows x64**：已安装 FTDI D3XX 驱动；64 位 `kcsdr.dll`（来自 KTOS 主机 SDK）与 64 位官方 `FTD3XX.dll`（1.3.0.4 或更新版本）放在 `ktos-mcp.exe` 同目录（或通过 `--sdk` 指定）
+- **Linux（`x86_64`、`aarch64` 等）**：系统已安装 `libusb-1.0`（`libusb-1.0-0`）并配置 FT601（`0403:601f`）udev 权限规则；`libkcsdr.so` 放在 `ktos-mcp` 同目录（或通过 `--sdk` 指定）
 - 设备端开启 **自制系统 → 远程 → MCP 模式**
 
 ## 编译与测试
 
-需要 Go 1.26 或更高版本。
+需要 Go 1.26 或更高版本（Linux 实机传输需启用 `CGO_ENABLED=1` 与 C 编译器以动态加载 `libkcsdr.so`）。
 
 ```powershell
-# 运行离线单元测试（使用内存 MCP 传输，无需连接真机）
+# Windows：运行离线单元测试并编译 x64 可执行文件
 go test ./...
-
-# 编译 Windows x64 可执行文件
 go build -trimpath -o ktos-mcp.exe ./cmd/ktos-mcp
+```
+
+```sh
+# Linux：运行单元测试（可选设置 KTOS_TEST_SDK=<tests/libkcsdr.so 路径>）并编译可执行文件
+CGO_ENABLED=1 go test ./...
+CGO_ENABLED=1 go build -trimpath -o ktos-mcp ./cmd/ktos-mcp
 ```
 
 ## MCP 客户端配置
 
-将 `ktos-mcp.exe`、`kcsdr.dll`、`FTD3XX.dll` 放在同一目录后，在支持本地 stdio MCP 的 AI 客户端中添加：
+将 `ktos-mcp` 与 `libkcsdr.so`（Windows 为 `ktos-mcp.exe`、`kcsdr.dll`、`FTD3XX.dll`）放在同一目录后，在支持本地 stdio MCP 的 AI 客户端中添加：
+
+Windows：
 
 ```json
 {
@@ -38,7 +43,20 @@ go build -trimpath -o ktos-mcp.exe ./cmd/ktos-mcp
 }
 ```
 
-若 `kcsdr.dll` 位于其他路径，可通过 `--sdk <路径>` 指定；多台设备时可通过 `--device N` 选择 FT601 索引。服务在首次调用工具时自动打开设备，连接中断后下次调用会自动重连，但不会重放失败的写入命令。
+Linux：
+
+```json
+{
+  "mcpServers": {
+    "kc908": {
+      "command": "/opt/ktos/linux-x64/ktos-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+若 `kcsdr.dll` / `libkcsdr.so` 位于其他路径，可通过 `--sdk <路径>` 指定；多台设备时可通过 `--device N` 选择 FT601 索引。服务在首次调用工具时自动打开设备，连接中断后下次调用会自动重连，但不会重放失败的写入命令。
 
 ## 命令行工具模式
 
@@ -78,12 +96,15 @@ ktos-mcp.exe -app-stop
 ├── cmd/
 │   └── ktos-mcp/
 │       ├── main.go                  # 程序入口、CLI 参数与 KCApp 控制台日志拉取
+│       ├── signals_*.go             # 平台优雅退出信号列表（SIGINT / SIGTERM）
 │       └── version.go               # 服务与二进制版本号常量
 ├── internal/
 │   ├── device/
 │   │   ├── device.go                # 设备接口、线程安全封装、JSON 响应与参数编解码
 │   │   ├── native_windows.go        # Windows amd64 kcsdr.dll 动态调用桥接
-│   │   ├── native_other.go          # 非 Windows 平台构建/测试占位实现
+│   │   ├── native_linux.go          # Linux cgo dlopen/dlsym libkcsdr.so 动态调用桥接
+│   │   ├── native_linux_test.go     # Linux 原生 SDK 加载与集成测试
+│   │   ├── native_other.go          # 其他平台或 CGO_ENABLED=0 构建占位实现
 │   │   └── device_test.go           # 响应解码与参数校验单元测试
 │   ├── transfer/
 │   │   ├── client.go                # 二进制 KIMG 传输协议封装与错误映射

@@ -10,9 +10,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"runtime"
 	"strings"
 	"sync"
 )
+
+// DefaultSDKName returns the platform-conventional shared library filename for
+// the KTOS host SDK ("kcsdr.dll" on Windows, "libkcsdr.so" on Linux/Unix).
+func DefaultSDKName() string {
+	if runtime.GOOS == "windows" {
+		return "kcsdr.dll"
+	}
+	return "libkcsdr.so"
+}
 
 // Device is the JSON control RPC transport exposed to MCP tools.
 type Device interface {
@@ -33,7 +43,8 @@ type LockedDevice struct {
 	index  uint32
 }
 
-// NewLocked creates a lazy, thread-safe device handle targeting kcsdr.dll at path.
+// NewLocked creates a lazy, thread-safe device handle targeting the KTOS SDK
+// shared library (kcsdr.dll / libkcsdr.so) at path.
 func NewLocked(path string, index uint32) *LockedDevice {
 	return &LockedDevice{path: path, index: index}
 }

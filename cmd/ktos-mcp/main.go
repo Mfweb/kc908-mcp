@@ -30,9 +30,9 @@ func main() {
 
 func run() int {
 	exe, _ := os.Executable()
-	defaultSDK := filepath.Join(filepath.Dir(exe), "kcsdr.dll")
+	defaultSDK := filepath.Join(filepath.Dir(exe), device.DefaultSDKName())
 
-	sdkPath := flag.String("sdk", defaultSDK, "Path to 64-bit KTOS SDK (kcsdr.dll)")
+	sdkPath := flag.String("sdk", defaultSDK, fmt.Sprintf("Path to KTOS SDK (%s)", device.DefaultSDKName()))
 	deviceIndex := flag.Uint("device", 0, "FT601 device index")
 	command := flag.String("command", "", "Execute one SDK command and exit (diagnostic CLI)")
 	appUpload := flag.String("app-upload", "", "Upload a local .kcapp module over USB3")
@@ -45,7 +45,7 @@ func run() int {
 	dev := device.NewLocked(*sdkPath, uint32(*deviceIndex))
 	defer dev.Close()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
 	defer stop()
 
 	if *appStop {

@@ -1,7 +1,10 @@
-# Built binaries and runtime DLLs
+# Built binaries and runtime shared libraries
 *.exe
 *.dll
+*.so
+*.so.*
 *.syso
+/ktos-mcp
 version.rc
 /bin/
 /build/
