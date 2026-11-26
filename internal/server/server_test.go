@@ -214,7 +214,7 @@ func TestInstrumentMCPTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Tools) != 33 {
+	if len(list.Tools) != 36 {
 		t.Fatalf("tools: %d", len(list.Tools))
 	}
 
@@ -229,6 +229,7 @@ func TestInstrumentMCPTools(t *testing.T) {
 		{"instrument_mode", ModeArgs{Mode: "vsa"}, "mode 6", false},
 		{"instrument_status", TelemetryArgs{Topic: "adsb"}, "adsb", false},
 		{"instrument_status", TelemetryArgs{Topic: "dtmb"}, "dtmb", false},
+		{"instrument_status", TelemetryArgs{Topic: "drm"}, "drm", false},
 		{"instrument_status", TelemetryArgs{Topic: "vsa"}, "vsa", false},
 		{"instrument_status", TelemetryArgs{Topic: "gps"}, "gps", false},
 		{"receiver_configure", ConfigureArgs{Parameters: []device.Parameter{{Name: "RX_FREQ", Value: 144640000}}}, "set RX_FREQ 144640000", false},
@@ -440,6 +441,99 @@ func TestVSAAndGPSMCPTools(t *testing.T) {
 	}
 
 	for _, tc := range vsaCases {
+		res, callErr := cs.CallTool(ctx, &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
+		if callErr != nil {
+			t.Fatal(callErr)
+		}
+		if res.IsError != tc.fail {
+			t.Fatalf("%s (%+v) error=%v content=%v", tc.name, tc.args, res.IsError, res.Content)
+		}
+		if tc.command != "" {
+			dev.mu.Lock()
+			last := dev.commands[len(dev.commands)-1]
+			dev.mu.Unlock()
+			if last != tc.command {
+				t.Fatalf("%s: got %q, want %q", tc.name, last, tc.command)
+			}
+		}
+	}
+}
+
+func TestDRMMCPTools(t *testing.T) {
+	ctx := context.Background()
+	dev := new(fakeDevice)
+	cs, cleanup := connectTestClient(t, ctx, dev)
+	defer cleanup()
+
+	freq := 9650000.0
+	svc := 1
+	stereoOn := true
+	stereoOff := false
+	badSvc := 4
+
+	r, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "drm_configure",
+		Arguments: DRMConfigureArgs{
+			Start:        true,
+			OpenPage:     true,
+			FrequencyHz:  &freq,
+			Profile:      "drm30_10k",
+			ServiceIndex: &svc,
+			Stereo:       &stereoOn,
+			IQInvert:     "invert",
+		},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("drm_configure failed: %v %+v", err, r)
+	}
+
+	wantCfg := []string{
+		"action drm_start 1",
+		"set RX_FREQ 9650000",
+		"action drm_profile 1",
+		"action drm_service 1",
+		"action drm_stereo 1",
+		"action drm_iq_invert 2",
+	}
+	dev.mu.Lock()
+	gotCfg := append([]string(nil), dev.commands...)
+	dev.mu.Unlock()
+	if len(gotCfg) != len(wantCfg) {
+		t.Fatalf("drm_configure commands: got %v, want %v", gotCfg, wantCfg)
+	}
+	for i := range wantCfg {
+		if gotCfg[i] != wantCfg[i] {
+			t.Fatalf("drm_configure[%d]: got %q, want %q", i, gotCfg[i], wantCfg[i])
+		}
+	}
+
+	drmCases := []struct {
+		name    string
+		args    any
+		command string
+		fail    bool
+	}{
+		{"drm_configure", DRMConfigureArgs{}, "", true},
+		{"drm_configure", DRMConfigureArgs{Profile: "bogus"}, "", true},
+		{"drm_configure", DRMConfigureArgs{ServiceIndex: &badSvc}, "", true},
+		{"drm_configure", DRMConfigureArgs{IQInvert: "bogus"}, "", true},
+		{"drm_control", DRMControlArgs{Operation: "start"}, "action drm_start 0", false},
+		{"drm_control", DRMControlArgs{Operation: "start", OpenPage: true}, "action drm_start 1", false},
+		{"drm_control", DRMControlArgs{Operation: "service", ServiceIndex: &svc}, "action drm_service 1", false},
+		{"drm_control", DRMControlArgs{Operation: "service", ServiceIndex: &badSvc}, "", true},
+		{"drm_control", DRMControlArgs{Operation: "profile", Profile: "drmp_100k"}, "action drm_profile 3", false},
+		{"drm_control", DRMControlArgs{Operation: "profile", Profile: "invalid"}, "", true},
+		{"drm_control", DRMControlArgs{Operation: "stereo", Stereo: &stereoOff}, "action drm_stereo 0", false},
+		{"drm_control", DRMControlArgs{Operation: "stereo"}, "", true},
+		{"drm_control", DRMControlArgs{Operation: "iq_invert", IQInvert: "normal"}, "action drm_iq_invert 1", false},
+		{"drm_control", DRMControlArgs{Operation: "iq_invert", IQInvert: "bad"}, "", true},
+		{"drm_control", DRMControlArgs{Operation: "reset"}, "action drm_reset", false},
+		{"drm_status", Empty{}, "drm", false},
+		{"drm_control", DRMControlArgs{Operation: "stop"}, "action drm_stop", false},
+		{"drm_control", DRMControlArgs{Operation: "unknown"}, "", true},
+	}
+
+	for _, tc := range drmCases {
 		res, callErr := cs.CallTool(ctx, &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
 		if callErr != nil {
 			t.Fatal(callErr)

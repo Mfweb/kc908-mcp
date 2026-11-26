@@ -44,7 +44,7 @@ type ActionArgs struct {
 }
 
 type TelemetryArgs struct {
-	Topic string `json:"topic" jsonschema:"Name from instrument_capabilities telemetry (including adsb, dtmb, vsa, gps, apps)"`
+	Topic string `json:"topic" jsonschema:"Name from instrument_capabilities telemetry (including adsb, dtmb, drm, vsa, gps, apps)"`
 }
 
 type InputArgs struct {
@@ -81,7 +81,7 @@ var allowedTelemetryTopics = map[string]struct{}{
 	"attitude": {}, "remote": {}, "rxperf": {}, "files": {}, "rxpeaklist": {},
 	"rxautoset": {}, "rxlevel": {}, "rxdetectors": {}, "rxmasks": {}, "rxdpx": {},
 	"rxwaterfall": {}, "licenses": {}, "environment": {}, "settings": {},
-	"adsb": {}, "dtmb": {}, "vsa": {}, "gps": {}, "apps": {},
+	"adsb": {}, "dtmb": {}, "drm": {}, "vsa": {}, "gps": {}, "apps": {},
 }
 
 func toolResult(raw json.RawMessage, err error) (*mcp.CallToolResult, any, error) {
@@ -119,6 +119,7 @@ func NewWithCleanup(dev device.Device, version string) (*mcp.Server, func()) {
 	addAppTools(s, dev, transfers)
 	addVSATools(s, dev)
 	addGPSTools(s, dev)
+	addDRMTools(s, dev)
 	addInstrumentTools(s, dev)
 
 	return s, transfers.Shutdown
@@ -224,7 +225,7 @@ func addInstrumentTools(s *mcp.Server, dev device.Device) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "instrument_status",
-		Description: "Read live receiver, source, audio, decoder, recording, marker, settings, ADS-B, DTMB, VSA, GPS, and KCApp state.",
+		Description: "Read live receiver, source, audio, decoder, recording, marker, settings, ADS-B, DTMB, DRM, VSA, GPS, and KCApp state.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a TelemetryArgs) (*mcp.CallToolResult, any, error) {
 		if _, ok := allowedTelemetryTopics[a.Topic]; !ok {
 			return toolResult(nil, fmt.Errorf("unknown telemetry topic"))

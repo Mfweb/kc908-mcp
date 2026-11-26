@@ -1,6 +1,6 @@
 # KTOS MCP 服务（`ktos-mcp`）
 
-基于 Go 编写的 stdio [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 服务，用于通过 USB 3.0 控制运行 KTOS 自制固件的 KC908 仪器。共提供 33 个结构化 MCP 工具，涵盖频谱仪、调制分析（VSA）、软件 GPS L1 接收与轨迹、接收机、信号源、实时遥测、SD/SSTV 图片传输以及 `.kcapp` 沙盒应用部署与调试，同时支持命令行诊断与一键调试模式。
+基于 Go 编写的 stdio [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 服务，用于通过 USB 3.0 控制运行 KTOS 自制固件的 KC908 仪器。共提供 36 个结构化 MCP 工具，涵盖频谱仪、调制分析（VSA）、软件 GPS L1 接收与轨迹、DRM30/DRM+ 数字广播解码、接收机、信号源、实时遥测、SD/SSTV 图片传输以及 `.kcapp` 沙盒应用部署与调试，同时支持命令行诊断与一键调试模式。
 
 [English](README.md)
 
@@ -55,7 +55,7 @@ ktos-mcp.exe -app-upload sat_tracker.kcapp -app-run -app-tail
 ktos-mcp.exe -app-stop
 ```
 
-## 提供的 MCP 工具（共 33 个）
+## 提供的 MCP 工具（共 36 个）
 
 | 分类 | 工具 |
 | --- | --- |
@@ -64,6 +64,7 @@ ktos-mcp.exe -app-stop
 | 动作、频谱与遥测状态 | `instrument_action`、`spectrum_read`、`instrument_status` |
 | 调制分析（VSA） | `vsa_configure`、`vsa_control`、`vsa_status`、`vsa_read` |
 | 软件 GPS L1 | `gps_control`、`gps_status`、`gps_track` |
+| DRM 数字广播（DRM30 / DRM+） | `drm_configure`、`drm_control`、`drm_status` |
 | 界面交互、文本与频道 | `instrument_menu`、`instrument_input`、`instrument_text`、`receiver_channel` |
 | SD / SSTV 图片传输 | `image_upload`、`image_download`、`image_remove`、`image_transfer_status` |
 | KCApp 沙盒应用管理 | `app_list`、`app_scan`、`app_upload`、`app_remove`、`app_launch`、`app_stop`、`app_console` |
@@ -94,9 +95,10 @@ ktos-mcp.exe -app-stop
 │       ├── server.go                # MCP 服务初始化与仪器控制工具注册
 │       ├── tools_vsa.go             # 调制分析（VSA）MCP 工具
 │       ├── tools_gps.go             # 软件 GPS L1 MCP 工具
+│       ├── tools_drm.go             # DRM30 / DRM+ 数字广播 MCP 工具
 │       ├── tools_image.go           # SD / SSTV 图片传输 MCP 工具
 │       ├── tools_app.go             # KCApp 沙盒管理 MCP 工具
-│       └── server_test.go           # 基于内存传输的 33 项 MCP 工具端到端测试
+│       └── server_test.go           # 基于内存传输的 36 项 MCP 工具端到端测试
 └── resources/
     └── version.rc.in                # Windows 文件版本资源模板
 ```

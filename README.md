@@ -1,6 +1,6 @@
 # KTOS MCP Server (`ktos-mcp`)
 
-Go stdio [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for controlling a KC908 running KTOS custom firmware over USB 3.0. It exposes 33 structured MCP tools for spectrum analysis, vector signal analysis (VSA), software GPS L1 reception/tracking, receiver & signal-source control, live telemetry, SSTV/SD image transfer, and sandboxed `.kcapp` deployment/debugging, plus one-shot CLI flags for diagnostics and app development.
+Go stdio [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for controlling a KC908 running KTOS custom firmware over USB 3.0. It exposes 36 structured MCP tools for spectrum analysis, vector signal analysis (VSA), software GPS L1 reception/tracking, DRM30/DRM+ digital broadcast decoding, receiver & signal-source control, live telemetry, SSTV/SD image transfer, and sandboxed `.kcapp` deployment/debugging, plus one-shot CLI flags for diagnostics and app development.
 
 [简体中文](README.zh-CN.md)
 
@@ -55,7 +55,7 @@ ktos-mcp.exe -app-upload sat_tracker.kcapp -app-run -app-tail
 ktos-mcp.exe -app-stop
 ```
 
-## Available MCP Tools (33)
+## Available MCP Tools (36)
 
 | Category | Tools |
 | --- | --- |
@@ -64,6 +64,7 @@ ktos-mcp.exe -app-stop
 | Actions, spectrum & status | `instrument_action`, `spectrum_read`, `instrument_status` |
 | Vector signal analysis (VSA) | `vsa_configure`, `vsa_control`, `vsa_status`, `vsa_read` |
 | Software GPS L1 | `gps_control`, `gps_status`, `gps_track` |
+| Digital Radio Mondiale (DRM) | `drm_configure`, `drm_control`, `drm_status` |
 | UI, text & channels | `instrument_menu`, `instrument_input`, `instrument_text`, `receiver_channel` |
 | SD / SSTV image transfer | `image_upload`, `image_download`, `image_remove`, `image_transfer_status` |
 | KCApp sandbox management | `app_list`, `app_scan`, `app_upload`, `app_remove`, `app_launch`, `app_stop`, `app_console` |
@@ -94,6 +95,7 @@ ktos-mcp.exe -app-stop
 │       ├── server.go                # MCP server wiring and instrument control tools
 │       ├── tools_vsa.go             # Vector signal analysis (VSA) MCP tools
 │       ├── tools_gps.go             # Software GPS L1 MCP tools
+│       ├── tools_drm.go             # DRM30 / DRM+ digital broadcast MCP tools
 │       ├── tools_image.go           # SD / SSTV image MCP tools
 │       ├── tools_app.go             # KCApp sandbox MCP tools
 │       └── server_test.go           # In-memory end-to-end MCP tool tests
