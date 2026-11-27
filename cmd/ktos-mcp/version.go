@@ -4,4 +4,4 @@
 package main
 
 // version is the semantic version reported in MCP ServerInfo and Windows version resources.
-const version = "1.0.5"
+const version = "1.0.6"
